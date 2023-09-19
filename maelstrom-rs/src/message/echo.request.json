@@ -1,0 +1,8 @@
+{
+  "src": "n1",
+  "dest": "n3",
+  "body": {
+    "type": "echo",
+    "msg_id": 1
+  }
+}
