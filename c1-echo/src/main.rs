@@ -20,9 +20,8 @@ enum EchoType {
 
 struct EchoWorkload;
 
-#[async_trait::async_trait]
 impl Workload<EchoType> for EchoWorkload {
-    async fn handle(&self, message: Message<EchoType>, tx: Sender<Message<EchoType>>) {
+    fn handle(&self, message: Message<EchoType>, tx: Sender<Message<EchoType>>) {
         let future = match message.data().to_owned() {
             EchoType::Echo { echo } => {
                 async move {

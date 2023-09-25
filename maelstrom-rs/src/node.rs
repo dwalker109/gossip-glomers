@@ -84,10 +84,10 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         }
     }
 
-    /// Run the node, receiving and handling messages indefinitely.
+    /// Run the node, receiving and handling (via the workload impl) messages indefinitely.
     pub async fn run(&mut self, workload: impl Workload<M>) {
         while let Ok(Some(recv)) = self.recv().await {
-            workload.handle(recv, self.tx.clone()).await;
+            workload.handle(recv, self.tx.clone());
         }
     }
 

@@ -20,9 +20,8 @@ enum UniqueIdType {
 
 struct UniqueIdWorkload;
 
-#[async_trait::async_trait]
 impl Workload<UniqueIdType> for UniqueIdWorkload {
-    async fn handle(&self, message: Message<UniqueIdType>, tx: Sender<Message<UniqueIdType>>) {
+    fn handle(&self, message: Message<UniqueIdType>, tx: Sender<Message<UniqueIdType>>) {
         let future = match message.data().to_owned() {
             UniqueIdType::Generate => {
                 async move {
