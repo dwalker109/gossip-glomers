@@ -4,6 +4,7 @@ resolver = "2"
 members = [
   "maelstrom-rs",
   "c1-echo",
+  "c2-unique-id-generation",
 ]
 
 [workspace.dependencies]
