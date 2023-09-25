@@ -1,8 +1,9 @@
+//! Trait defining how a node completes a given workload.
+
 use crate::message::Message;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
 
-/// Implement this trait to define how a node responds to client messages.
 pub trait Workload<M: DeserializeOwned> {
     /// Handle will be called once per incoming message, and can send messages
     /// out again via the provided channel. Any number of message can be send -

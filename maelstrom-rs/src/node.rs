@@ -1,3 +1,9 @@
+//! Async client for the Maelstrom distributed systems workbench.
+//!
+//! Provides a Node implementation generic over an async reader and writer,
+//! and a Workflow trait which should be implemented for the specific workflow
+//! you are exploring.
+
 use crate::message::InitType::InitOk;
 use crate::message::{Body, InitType, Message};
 use crate::workload::Workload;
@@ -11,7 +17,7 @@ use tokio::io::{
 };
 use tokio::sync::mpsc;
 
-/// A single node in the network.
+/// A single node in the network, connected to the provided reader and writer.
 pub struct Node<
     R: AsyncRead + Unpin + 'static,
     M: DeserializeOwned + Serialize + Send + Sync + 'static,

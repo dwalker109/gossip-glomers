@@ -1,9 +1,0 @@
-{
-  "src": "n3",
-  "dest": "n1",
-  "body": {
-    "type": "init_ok",
-    "msg_id": 2,
-    "in_reply_to": 1
-  }
-}
