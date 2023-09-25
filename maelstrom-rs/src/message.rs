@@ -1,69 +1,40 @@
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
-pub struct Message {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Message<T> {
     pub(crate) src: Option<String>,
     pub(crate) dest: Option<String>,
-    pub(crate) body: Body,
+    pub(crate) body: Body<T>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
-pub struct Body {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Body<T> {
     #[serde(flatten)]
-    pub(crate) r#type: DataFields,
+    pub(crate) r#type: T,
     pub(crate) msg_id: Option<usize>,
     pub(crate) in_reply_to: Option<usize>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum DataFields {
+pub(crate) enum InitType {
     Init {
         node_id: String,
         node_ids: Vec<String>,
     },
     InitOk,
-    Topology,
-    TopologyOk,
-    Broadcast,
-    BroadcastOk,
-    Read,
-    ReadOk,
-    Echo {
-        echo: String,
-    },
-    EchoOk {
-        echo: String,
-    },
-    Add,
-    AddOk,
-    Send,
-    SendOk,
-    Poll,
-    PollOk,
-    CommitOffsets,
-    CommitOffsetsOk,
-    ListCommittedOffsets,
-    ListCommittedOffsetsOk,
-    Write,
-    WriteOk,
-    Cas,
-    CasOk,
-    Txn,
-    TxnOk,
-    Generate,
-    GenerateOk,
 }
 
-impl Message {
-    pub fn data(&self) -> &DataFields {
+impl<T: DeserializeOwned> Message<T> {
+    pub fn data(&self) -> &T {
         &self.body.r#type
     }
 }
 
-impl Body {
-    pub fn new(r#type: DataFields) -> Self {
+impl<T: DeserializeOwned> Body<T> {
+    pub fn new(r#type: T) -> Self {
         Self {
             r#type,
             msg_id: None,

@@ -1,7 +1,8 @@
 use crate::message::Message;
+use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
 
 #[async_trait::async_trait]
-pub trait Workload {
-    async fn handle(&self, message: Message, tx: mpsc::Sender<Message>);
+pub trait Workload<M: DeserializeOwned + Send + Sync + 'static> {
+    async fn handle(&self, message: Message<M>, tx: mpsc::Sender<Message<M>>);
 }

@@ -1,5 +1,8 @@
-use crate::message::{Body, DataFields, Message};
+use crate::message::InitType::InitOk;
+use crate::message::{Body, InitType, Message};
 use crate::workload::Workload;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::AcqRel;
 use tokio::io::{
@@ -9,15 +12,20 @@ use tokio::io::{
 use tokio::sync::mpsc;
 
 /// A single node in the network.
-pub struct Node<R: AsyncRead + Unpin + 'static> {
+pub struct Node<
+    R: AsyncRead + Unpin + 'static,
+    M: DeserializeOwned + Serialize + Send + Sync + 'static,
+> {
     node_id: String,
-    node_ids: Vec<String>,
+    _node_ids: Vec<String>,
     reader: BufReader<R>,
     reader_buf: String,
-    tx: mpsc::Sender<Message>,
+    tx: mpsc::Sender<Message<M>>,
 }
 
-impl<R: AsyncRead + Unpin + 'static> Node<R> {
+impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sync + 'static>
+    Node<R, M>
+{
     /// Starts a new Node connected to the provided input and output.
     ///
     /// Will not complete until an init message is received on the provided reader.
@@ -27,51 +35,67 @@ impl<R: AsyncRead + Unpin + 'static> Node<R> {
     ) -> Result<Self> {
         let mut reader = BufReader::new(reader);
         let mut reader_buf = String::with_capacity(256);
+        let mut writer = BufWriter::new(writer);
 
         reader.read_line(&mut reader_buf).await?;
-        let msg: Message = serde_json::from_str(&reader_buf)?;
-        reader_buf.clear();
+        let msg_init: Message<InitType> = serde_json::from_str(&reader_buf)?;
 
-        let (node_id, node_ids) = if let DataFields::Init { node_id, node_ids } = &msg.body.r#type {
-            (node_id.to_owned(), node_ids.to_owned())
-        } else {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "init message must be received on startup",
-            ));
-        };
+        let (node_id, _node_ids, msg_init_ok) = Self::init(msg_init).await?;
+        let b = serde_json::to_vec(&msg_init_ok)?;
+        writer.write_all(&b).await.ok();
+        writer.write_u8(b'\n').await.ok();
+        writer.flush().await.ok();
 
-        let writer = BufWriter::new(writer);
-        let (tx, rx) = mpsc::channel::<Message>(32);
+        let (tx, rx) = mpsc::channel::<Message<M>>(32);
 
         let node = Self {
             node_id,
-            node_ids,
+            _node_ids,
             reader,
             reader_buf,
             tx,
         };
-
-        let reply = make_reply(msg, Body::new(DataFields::InitOk));
-        node.tx.send(reply).await.ok();
 
         tokio::spawn(Self::handle_write(node.node_id.clone(), writer, rx));
 
         Ok(node)
     }
 
+    /// Process the init message.
+    async fn init(msg_init: Message<InitType>) -> Result<(String, Vec<String>, Message<InitType>)> {
+        match &msg_init.body.r#type {
+            InitType::Init { node_id, node_ids } => {
+                let msg_init_ok = Message {
+                    src: Some(node_id.to_owned()),
+                    dest: msg_init.src.to_owned(),
+                    body: Body {
+                        r#type: InitOk,
+                        msg_id: Some(0),
+                        in_reply_to: msg_init.body.msg_id,
+                    },
+                };
+
+                Ok((node_id.to_owned(), node_ids.to_owned(), msg_init_ok))
+            }
+            _ => Err(Error::new(
+                ErrorKind::InvalidData,
+                "init message must be received on startup",
+            )),
+        }
+    }
+
     /// Run the node, receiving and handling messages indefinitely.
-    pub async fn run(&mut self, workload: impl Workload) {
+    pub async fn run(&mut self, workload: impl Workload<M>) {
         while let Ok(Some(recv)) = self.recv().await {
             workload.handle(recv, self.tx.clone()).await;
         }
     }
 
     /// Receive a single message from the node's reader.
-    async fn recv(&mut self) -> Result<Option<Message>> {
-        self.reader.read_line(&mut self.reader_buf).await?;
-        let msg: Message = serde_json::from_str(&self.reader_buf)?;
+    async fn recv(&mut self) -> Result<Option<Message<M>>> {
         self.reader_buf.clear();
+        self.reader.read_line(&mut self.reader_buf).await?;
+        let msg: Message<M> = serde_json::from_str(&self.reader_buf)?;
 
         Ok(Some(msg))
     }
@@ -80,9 +104,9 @@ impl<R: AsyncRead + Unpin + 'static> Node<R> {
     async fn handle_write<W: AsyncWrite + Unpin + Send + Sync + 'static>(
         node_id: String,
         mut w: BufWriter<W>,
-        mut rx: mpsc::Receiver<Message>,
+        mut rx: mpsc::Receiver<Message<M>>,
     ) {
-        let next_id = AtomicUsize::default();
+        let next_id = AtomicUsize::new(1);
 
         while let Some(mut msg) = rx.recv().await {
             // Set src if not already set
@@ -104,7 +128,7 @@ impl<R: AsyncRead + Unpin + 'static> Node<R> {
 }
 
 /// Build a reply message by consuming the subject, and a new message body.
-pub fn make_reply(recv: Message, send_body: Body) -> Message {
+pub fn make_reply<M: DeserializeOwned>(recv: Message<M>, send_body: Body<M>) -> Message<M> {
     let mut reply = Message {
         src: None, // handle_write will set this if we don't
         dest: recv.src,
