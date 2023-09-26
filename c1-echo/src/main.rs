@@ -1,7 +1,6 @@
-use maelstrom_rs::{make_reply, Body, Message, Node, Workload};
+use maelstrom_rs::{Message, Node, Outbox, Workload};
 use serde::{Deserialize, Serialize};
 use tokio::io::{stdin, stdout};
-use tokio::sync::mpsc::Sender;
 
 #[tokio::main]
 async fn main() {
@@ -13,20 +12,21 @@ async fn main() {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-enum EchoType {
+enum EchoBody {
     Echo { echo: String },
     EchoOk { echo: String },
 }
 
 struct EchoWorkload;
 
-impl Workload<EchoType> for EchoWorkload {
-    fn handle(&self, message: Message<EchoType>, tx: Sender<Message<EchoType>>) {
-        let future = match message.data().to_owned() {
-            EchoType::Echo { echo } => {
+impl Workload<EchoBody> for EchoWorkload {
+    fn handle(&mut self, message: Message<EchoBody>, outbox: Outbox<EchoBody>) {
+        let future = match message.body().r#type().to_owned() {
+            EchoBody::Echo { echo } => {
                 async move {
-                    let reply = make_reply(message, Body::new(EchoType::EchoOk { echo }));
-                    tx.send(reply).await.ok();
+                    outbox
+                        .reply(&message, EchoBody::EchoOk { echo }.into())
+                        .await;
                 }
             }
             _ => unimplemented!(),

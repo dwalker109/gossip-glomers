@@ -5,6 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/c1-echo/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/maelstrom-rs/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/c2-unique-id-generation/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/c3-broadcast/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

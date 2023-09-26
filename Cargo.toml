@@ -5,6 +5,7 @@ members = [
   "maelstrom-rs",
   "c1-echo",
   "c2-unique-id-generation",
+  "c3-broadcast",
 ]
 
 [workspace.dependencies]

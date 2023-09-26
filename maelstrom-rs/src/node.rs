@@ -1,36 +1,38 @@
-//! Async client for the Maelstrom distributed systems workbench.
-//!
-//! Provides a Node implementation generic over an async reader and writer,
-//! and a Workflow trait which should be implemented for the specific workflow
-//! you are exploring.
-
-use crate::message::InitType::InitOk;
-use crate::message::{Body, InitType, Message};
+use crate::message::{Body, Message, Outbox};
 use crate::workload::Workload;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::AcqRel;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::io::{
     AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, Error, ErrorKind,
     Result,
 };
-use tokio::sync::mpsc;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+enum InitBody {
+    Init {
+        node_id: String,
+        node_ids: Vec<String>,
+    },
+    InitOk,
+}
 
 /// A single node in the network, connected to the provided reader and writer.
 pub struct Node<
     R: AsyncRead + Unpin + 'static,
-    M: DeserializeOwned + Serialize + Send + Sync + 'static,
+    M: Clone + DeserializeOwned + Serialize + Send + Sync + 'static,
 > {
-    node_id: String,
+    _node_id: String,
     _node_ids: Vec<String>,
     reader: BufReader<R>,
     reader_buf: String,
-    tx: mpsc::Sender<Message<M>>,
+    outbox: Outbox<M>,
 }
 
-impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sync + 'static>
-    Node<R, M>
+impl<
+        R: AsyncRead + Unpin + 'static,
+        M: Clone + DeserializeOwned + Serialize + Send + Sync + 'static,
+    > Node<R, M>
 {
     /// Starts a new Node connected to the provided input and output.
     ///
@@ -44,44 +46,38 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         let mut writer = BufWriter::new(writer);
 
         reader.read_line(&mut reader_buf).await?;
-        let msg_init: Message<InitType> = serde_json::from_str(&reader_buf)?;
-
-        let (node_id, _node_ids, msg_init_ok) = Self::init(msg_init).await?;
-        let b = serde_json::to_vec(&msg_init_ok)?;
-        writer.write_all(&b).await.ok();
-        writer.write_u8(b'\n').await.ok();
-        writer.flush().await.ok();
-
-        let (tx, rx) = mpsc::channel::<Message<M>>(32);
+        let msg_init: Message<InitBody> = serde_json::from_str(&reader_buf)?;
+        let (node_id, _node_ids) = Self::init(msg_init, &mut writer).await?;
 
         let node = Self {
-            node_id,
+            _node_id: node_id.clone(),
             _node_ids,
             reader,
             reader_buf,
-            tx,
+            outbox: Outbox::new(node_id, 1, writer, 32),
         };
-
-        tokio::spawn(Self::handle_write(node.node_id.clone(), writer, rx));
 
         Ok(node)
     }
 
-    /// Process the init message.
-    async fn init(msg_init: Message<InitType>) -> Result<(String, Vec<String>, Message<InitType>)> {
-        match &msg_init.body.r#type {
-            InitType::Init { node_id, node_ids } => {
+    async fn init(
+        msg_init: Message<InitBody>,
+        writer: &mut BufWriter<impl AsyncWrite + Unpin>,
+    ) -> Result<(String, Vec<String>)> {
+        match &msg_init.body().r#type() {
+            InitBody::Init { node_id, node_ids } => {
                 let msg_init_ok = Message {
-                    src: Some(node_id.to_owned()),
-                    dest: msg_init.src.to_owned(),
-                    body: Body {
-                        r#type: InitOk,
-                        msg_id: Some(0),
-                        in_reply_to: msg_init.body.msg_id,
-                    },
+                    src: node_id.to_owned(),
+                    dest: msg_init.src.clone(),
+                    body: Body::new(InitBody::InitOk, Some(0), msg_init.body().msg_id),
                 };
 
-                Ok((node_id.to_owned(), node_ids.to_owned(), msg_init_ok))
+                let b = serde_json::to_vec(&msg_init_ok)?;
+                writer.write_all(&b).await.ok();
+                writer.write_u8(b'\n').await.ok();
+                writer.flush().await.ok();
+
+                Ok((node_id.to_owned(), node_ids.to_owned()))
             }
             _ => Err(Error::new(
                 ErrorKind::InvalidData,
@@ -91,9 +87,9 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
     }
 
     /// Run the node, receiving and handling (via the workload impl) messages indefinitely.
-    pub async fn run(&mut self, workload: impl Workload<M>) {
+    pub async fn run(&mut self, mut workload: impl Workload<M>) {
         while let Ok(Some(recv)) = self.recv().await {
-            workload.handle(recv, self.tx.clone());
+            workload.handle(recv, self.outbox.clone());
         }
     }
 
@@ -105,47 +101,4 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
 
         Ok(Some(msg))
     }
-
-    /// Emit messages from the node.
-    async fn handle_write<W: AsyncWrite + Unpin + Send + Sync + 'static>(
-        node_id: String,
-        mut w: BufWriter<W>,
-        mut rx: mpsc::Receiver<Message<M>>,
-    ) {
-        let next_id = AtomicUsize::new(1);
-
-        while let Some(mut msg) = rx.recv().await {
-            // Set src if not already set
-            msg.src = msg.src.or(Some(node_id.clone()));
-
-            // Set message id if not already set
-            msg.body.msg_id = msg
-                .body
-                .msg_id
-                .or_else(|| Some(next_id.fetch_add(1, AcqRel)));
-
-            if let Ok(b) = serde_json::to_vec(&msg) {
-                w.write_all(&b).await.ok();
-                w.write_u8(b'\n').await.ok();
-                w.flush().await.ok();
-            }
-        }
-    }
 }
-
-/// Build a reply message by consuming the subject, and a new message body.
-pub fn make_reply<M: DeserializeOwned>(recv: Message<M>, send_body: Body<M>) -> Message<M> {
-    let mut reply = Message {
-        src: None, // handle_write will set this if we don't
-        dest: recv.src,
-        body: send_body,
-    };
-
-    // Set reply to the received message id if not already set
-    reply.body.in_reply_to = reply.body.in_reply_to.or(recv.body.msg_id);
-
-    reply
-}
-
-#[cfg(test)]
-mod tests {}
