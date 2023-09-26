@@ -21,7 +21,7 @@ enum UniqueIdBody {
 struct UniqueIdWorkload;
 
 impl Workload<UniqueIdBody> for UniqueIdWorkload {
-    fn handle(&self, message: Message<UniqueIdBody>, tx: Sender<Message<UniqueIdBody>>) {
+    fn handle(&mut self, message: Message<UniqueIdBody>, tx: Sender<Message<UniqueIdBody>>) {
         let future = match message.data().to_owned() {
             UniqueIdBody::Generate => {
                 async move {

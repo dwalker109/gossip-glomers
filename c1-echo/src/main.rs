@@ -21,7 +21,7 @@ enum EchoBody {
 struct EchoWorkload;
 
 impl Workload<EchoBody> for EchoWorkload {
-    fn handle(&self, message: Message<EchoBody>, tx: Sender<Message<EchoBody>>) {
+    fn handle(&mut self, message: Message<EchoBody>, tx: Sender<Message<EchoBody>>) {
         let future = match message.data().to_owned() {
             EchoBody::Echo { echo } => {
                 async move {

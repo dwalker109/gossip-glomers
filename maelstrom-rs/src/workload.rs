@@ -12,5 +12,5 @@ pub trait Workload<M: DeserializeOwned> {
     /// While this method is not async and is called synchronously, consider
     /// spawning a task to carry out your processing, allowing the node to carry on
     /// handling incoming messages.
-    fn handle(&self, message: Message<M>, tx: mpsc::Sender<Message<M>>);
+    fn handle(&mut self, recv: Message<M>, tx: mpsc::Sender<Message<M>>);
 }
