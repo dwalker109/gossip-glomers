@@ -13,19 +13,19 @@ async fn main() {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-enum EchoType {
+enum EchoBody {
     Echo { echo: String },
     EchoOk { echo: String },
 }
 
 struct EchoWorkload;
 
-impl Workload<EchoType> for EchoWorkload {
-    fn handle(&self, message: Message<EchoType>, tx: Sender<Message<EchoType>>) {
+impl Workload<EchoBody> for EchoWorkload {
+    fn handle(&self, message: Message<EchoBody>, tx: Sender<Message<EchoBody>>) {
         let future = match message.data().to_owned() {
-            EchoType::Echo { echo } => {
+            EchoBody::Echo { echo } => {
                 async move {
-                    let reply = make_reply(message, Body::new(EchoType::EchoOk { echo }));
+                    let reply = make_reply(message, Body::new(EchoBody::EchoOk { echo }));
                     tx.send(reply).await.ok();
                 }
             }

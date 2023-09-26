@@ -13,21 +13,21 @@ async fn main() {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-enum UniqueIdType {
+enum UniqueIdBody {
     Generate,
     GenerateOk { id: String },
 }
 
 struct UniqueIdWorkload;
 
-impl Workload<UniqueIdType> for UniqueIdWorkload {
-    fn handle(&self, message: Message<UniqueIdType>, tx: Sender<Message<UniqueIdType>>) {
+impl Workload<UniqueIdBody> for UniqueIdWorkload {
+    fn handle(&self, message: Message<UniqueIdBody>, tx: Sender<Message<UniqueIdBody>>) {
         let future = match message.data().to_owned() {
-            UniqueIdType::Generate => {
+            UniqueIdBody::Generate => {
                 async move {
                     let reply = make_reply(
                         message,
-                        Body::new(UniqueIdType::GenerateOk {
+                        Body::new(UniqueIdBody::GenerateOk {
                             id: uuid::Uuid::new_v4().to_string(),
                         }),
                     );

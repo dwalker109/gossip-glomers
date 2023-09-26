@@ -4,18 +4,17 @@
 //! and a Workflow trait which should be implemented for the specific workflow
 //! you are exploring.
 
-use crate::message::InitType::InitOk;
-use crate::message::{Body, InitType, Message};
+use crate::message::{Body, InitBody, Message};
 use crate::workload::Workload;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::AcqRel;
-use tokio::io::{
-    AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, Error, ErrorKind,
-    Result,
+use serde::{de::DeserializeOwned, Serialize};
+use std::sync::atomic::{AtomicUsize, Ordering::AcqRel};
+use tokio::{
+    io::{
+        AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, Error,
+        ErrorKind, Result,
+    },
+    sync::mpsc,
 };
-use tokio::sync::mpsc;
 
 /// A single node in the network, connected to the provided reader and writer.
 pub struct Node<
@@ -44,7 +43,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         let mut writer = BufWriter::new(writer);
 
         reader.read_line(&mut reader_buf).await?;
-        let msg_init: Message<InitType> = serde_json::from_str(&reader_buf)?;
+        let msg_init: Message<InitBody> = serde_json::from_str(&reader_buf)?;
 
         let (node_id, _node_ids, msg_init_ok) = Self::init(msg_init).await?;
         let b = serde_json::to_vec(&msg_init_ok)?;
@@ -68,14 +67,14 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
     }
 
     /// Process the init message.
-    async fn init(msg_init: Message<InitType>) -> Result<(String, Vec<String>, Message<InitType>)> {
+    async fn init(msg_init: Message<InitBody>) -> Result<(String, Vec<String>, Message<InitBody>)> {
         match &msg_init.body.r#type {
-            InitType::Init { node_id, node_ids } => {
+            InitBody::Init { node_id, node_ids } => {
                 let msg_init_ok = Message {
                     src: Some(node_id.to_owned()),
                     dest: msg_init.src.to_owned(),
                     body: Body {
-                        r#type: InitOk,
+                        r#type: InitBody::InitOk,
                         msg_id: Some(0),
                         in_reply_to: msg_init.body.msg_id,
                     },

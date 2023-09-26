@@ -1,5 +1,4 @@
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message<T> {
@@ -19,7 +18,7 @@ pub struct Body<T> {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub(crate) enum InitType {
+pub(crate) enum InitBody {
     Init {
         node_id: String,
         node_ids: Vec<String>,
