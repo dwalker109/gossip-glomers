@@ -1,10 +1,4 @@
-//! Async client for the Maelstrom distributed systems workbench.
-//!
-//! Provides a Node implementation generic over an async reader and writer,
-//! and a Workflow trait which should be implemented for the specific workflow
-//! you are exploring.
-
-use crate::message::{Body, InitBody, Message};
+use crate::message::{Body, Id, InitBody, Message};
 use crate::workload::Workload;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering::AcqRel};
@@ -75,7 +69,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
                     dest: msg_init.src.to_owned(),
                     body: Body {
                         r#type: InitBody::InitOk,
-                        msg_id: Some(0),
+                        msg_id: Id::Value(Some(0)),
                         in_reply_to: msg_init.body.msg_id,
                     },
                 };
@@ -117,11 +111,11 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
             // Set src if not already set
             msg.src = msg.src.or(Some(node_id.clone()));
 
-            // Set message id if not already set
+            // Set message id if deferred
             msg.body.msg_id = msg
                 .body
                 .msg_id
-                .or_else(|| Some(next_id.fetch_add(1, AcqRel)));
+                .else_coalesce(|| Id::Value(Some(next_id.fetch_add(1, AcqRel))));
 
             if let Ok(b) = serde_json::to_vec(&msg) {
                 w.write_all(&b).await.ok();
@@ -140,8 +134,8 @@ pub fn make_reply<M: DeserializeOwned>(recv: Message<M>, send_body: Body<M>) -> 
         body: send_body,
     };
 
-    // Set reply to the received message id if not already set
-    reply.body.in_reply_to = reply.body.in_reply_to.or(recv.body.msg_id);
+    // Set reply to the received message id if deferred
+    reply.body.in_reply_to = reply.body.in_reply_to.coalesce(recv.body.msg_id);
 
     reply
 }
