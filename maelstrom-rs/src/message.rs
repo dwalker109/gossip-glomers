@@ -1,28 +1,7 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-#[serde(untagged)]
-pub enum Id<T> {
-    Value(Option<T>),
-    #[serde(skip)]
-    Defer,
-}
-
-impl<T> Id<T> {
-    pub fn coalesce(self, val: Id<T>) -> Self {
-        match self {
-            Id::Defer => val,
-            _ => self,
-        }
-    }
-
-    pub fn else_coalesce(self, coalesce_fn: impl Fn() -> Id<T>) -> Self {
-        match self {
-            Id::Defer => coalesce_fn(),
-            _ => self,
-        }
-    }
-}
+mod deferrable_id;
+pub use deferrable_id::Id;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message<T> {
@@ -50,13 +29,13 @@ pub(crate) enum InitBody {
     InitOk,
 }
 
-impl<T: DeserializeOwned> Message<T> {
+impl<T> Message<T> {
     pub fn data(&self) -> &T {
         &self.body.r#type
     }
 }
 
-impl<T: DeserializeOwned> Body<T> {
+impl<T> Body<T> {
     pub fn new(r#type: T) -> Self {
         Self {
             r#type,

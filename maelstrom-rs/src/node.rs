@@ -69,7 +69,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
                     dest: msg_init.src.to_owned(),
                     body: Body {
                         r#type: InitBody::InitOk,
-                        msg_id: Id::Value(Some(0)),
+                        msg_id: Id::Known(Some(0)),
                         in_reply_to: msg_init.body.msg_id,
                     },
                 };
@@ -115,7 +115,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
             msg.body.msg_id = msg
                 .body
                 .msg_id
-                .else_coalesce(|| Id::Value(Some(next_id.fetch_add(1, AcqRel))));
+                .else_coalesce(|| Id::Known(Some(next_id.fetch_add(1, AcqRel))));
 
             if let Ok(b) = serde_json::to_vec(&msg) {
                 w.write_all(&b).await.ok();
