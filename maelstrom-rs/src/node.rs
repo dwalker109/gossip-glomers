@@ -65,7 +65,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         match &msg_init.body.r#type {
             InitBody::Init { node_id, node_ids } => {
                 let msg_init_ok = Message {
-                    src: Some(node_id.to_owned()),
+                    src: Id::Known(Some(node_id.to_owned())),
                     dest: msg_init.src.to_owned(),
                     body: Body {
                         r#type: InitBody::InitOk,
@@ -109,7 +109,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
 
         while let Some(mut msg) = rx.recv().await {
             // Set src if not already set
-            msg.src = msg.src.or(Some(node_id.clone()));
+            msg.src = msg.src.else_coalesce(|| Id::Known(Some(node_id.clone())));
 
             // Set message id if deferred
             msg.body.msg_id = msg
@@ -129,7 +129,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
 /// Build a reply message by consuming the subject, and a new message body.
 pub fn make_reply<M: DeserializeOwned>(recv: Message<M>, send_body: Body<M>) -> Message<M> {
     let mut reply = Message {
-        src: None, // handle_write will set this if we don't
+        src: Id::Defer,
         dest: recv.src,
         body: send_body,
     };

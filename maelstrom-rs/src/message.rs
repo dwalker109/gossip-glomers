@@ -5,8 +5,8 @@ pub use deferrable_id::Id;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message<T> {
-    pub(crate) src: Option<String>,
-    pub(crate) dest: Option<String>,
+    pub(crate) src: Id<String>,
+    pub(crate) dest: Id<String>,
     pub(crate) body: Body<T>,
 }
 
