@@ -62,17 +62,13 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
 
     /// Process the init message.
     async fn init(msg_init: Message<InitBody>) -> Result<(String, Vec<String>, Message<InitBody>)> {
-        match &msg_init.body.r#type {
+        match &msg_init.body().r#type() {
             InitBody::Init { node_id, node_ids } => {
-                let msg_init_ok = Message {
-                    src: Id::Known(Some(node_id.to_owned())),
-                    dest: msg_init.src.to_owned(),
-                    body: Body {
-                        r#type: InitBody::InitOk,
-                        msg_id: Id::Known(Some(0)),
-                        in_reply_to: msg_init.body.msg_id,
-                    },
-                };
+                let msg_init_ok = Message::new(
+                    Id::Known(Some(node_id.to_owned())),
+                    msg_init.src.clone(),
+                    Body::new(InitBody::InitOk, Id::Known(Some(0)), msg_init.body().msg_id),
+                );
 
                 Ok((node_id.to_owned(), node_ids.to_owned(), msg_init_ok))
             }
@@ -108,10 +104,10 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         let next_id = AtomicUsize::new(1);
 
         while let Some(mut msg) = rx.recv().await {
-            // Set src if not already set
+            // Set src if deferred
             msg.src = msg.src.else_coalesce(|| Id::Known(Some(node_id.clone())));
 
-            // Set message id if deferred
+            // Set msg_id if deferred
             msg.body.msg_id = msg
                 .body
                 .msg_id
@@ -125,20 +121,3 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         }
     }
 }
-
-/// Build a reply message by consuming the subject, and a new message body.
-pub fn make_reply<M: DeserializeOwned>(recv: Message<M>, send_body: Body<M>) -> Message<M> {
-    let mut reply = Message {
-        src: Id::Defer,
-        dest: recv.src,
-        body: send_body,
-    };
-
-    // Set reply to the received message id if deferred
-    reply.body.in_reply_to = reply.body.in_reply_to.coalesce(recv.body.msg_id);
-
-    reply
-}
-
-#[cfg(test)]
-mod tests {}

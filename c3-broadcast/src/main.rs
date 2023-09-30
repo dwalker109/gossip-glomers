@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use maelstrom_rs::{make_reply, Body, Message, Node, Workload};
+use maelstrom_rs::{Body, Message, Node, Workload};
 use serde::{Deserialize, Serialize};
 use tokio::io::{stdin, stdout};
 use tokio::sync::mpsc::Sender;
@@ -45,21 +45,24 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
         let topology = Arc::clone(&self.topology);
 
         tokio::spawn(async move {
-            match recv.data() {
+            match recv.body().r#type() {
                 BroadcastBody::Broadcast { message } => {
                     messages.lock().unwrap().insert(*message);
-                    tx.send(make_reply(recv, Body::new(BroadcastBody::BroadcastOk)))
+
+                    tx.send(recv.into_reply(BroadcastBody::BroadcastOk.into()))
                         .await
                         .ok();
                 }
                 BroadcastBody::BroadcastOk => unimplemented!(),
                 BroadcastBody::Read => {
-                    tx.send(make_reply(
-                        recv,
-                        Body::new(BroadcastBody::ReadOk {
-                            messages: Arc::clone(&messages),
-                        }),
-                    ))
+                    tx.send(
+                        recv.into_reply(
+                            BroadcastBody::ReadOk {
+                                messages: Arc::clone(&messages),
+                            }
+                            .into(),
+                        ),
+                    )
                     .await
                     .ok();
                 }
@@ -68,7 +71,7 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
                     topology: new_topology,
                 } => {
                     *topology.lock().unwrap() = new_topology.clone();
-                    tx.send(make_reply(recv, Body::new(BroadcastBody::TopologyOk)))
+                    tx.send(recv.into_reply(BroadcastBody::TopologyOk.into()))
                         .await
                         .ok();
                 }
