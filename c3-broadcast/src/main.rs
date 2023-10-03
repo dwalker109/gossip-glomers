@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use maelstrom_rs::{Body, Message, Node, Workload};
+use maelstrom_rs::{Body, Id, Message, Node, Workload};
 use serde::{Deserialize, Serialize};
 use tokio::io::{stdin, stdout};
 use tokio::sync::mpsc::Sender;
@@ -29,14 +29,14 @@ enum BroadcastBody {
         messages: Arc<Mutex<HashSet<usize>>>,
     },
     Topology {
-        topology: HashMap<String, Vec<String>>,
+        topology: HashMap<Id<String>, Vec<Id<String>>>,
     },
     TopologyOk,
 }
 
 struct BroadcastWorkload {
     messages: Arc<Mutex<HashSet<usize>>>,
-    topology: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    topology: Arc<Mutex<HashMap<Id<String>, Vec<Id<String>>>>>,
 }
 
 impl Workload<BroadcastBody> for BroadcastWorkload {
@@ -45,6 +45,9 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
         let topology = Arc::clone(&self.topology);
 
         tokio::spawn(async move {
+            let node_id = recv.dest().clone();
+            let from = recv.src().clone();
+
             match recv.body().r#type() {
                 BroadcastBody::Broadcast { message } => {
                     messages.lock().unwrap().insert(*message);
@@ -52,6 +55,15 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
                     tx.send(recv.into_reply(BroadcastBody::BroadcastOk.into()))
                         .await
                         .ok();
+
+                    let neighbours = topology.lock().unwrap().get(&node_id);
+                    if let Some(neighbours) = neighbours {
+                        for n in neighbours.iter().filter(|&n| *n != from) {
+                            tx.send(Message::new(Id::Defer, n.clone(), recv.body().clone()))
+                                .await
+                                .ok();
+                        }
+                    }
                 }
                 BroadcastBody::BroadcastOk => unimplemented!(),
                 BroadcastBody::Read => {

@@ -20,7 +20,7 @@ pub use deferrable_id::Id;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message<T> {
     pub(super) src: Id<String>,
-    dest: Id<String>,
+    pub(super) dest: Id<String>,
     pub(super) body: Body<T>,
 }
 
@@ -38,6 +38,14 @@ impl<T> Message<T> {
 }
 
 impl<T> Message<T> {
+    pub fn src(&self) -> &Id<String> {
+        &self.src
+    }
+
+    pub fn dest(&self) -> &Id<String> {
+        &self.dest
+    }
+
     pub fn body(&self) -> &Body<T> {
         &self.body
     }
