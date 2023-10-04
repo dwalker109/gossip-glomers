@@ -35,6 +35,16 @@ impl<T> Message<T> {
     pub fn new(src: Id<String>, dest: Id<String>, body: Body<T>) -> Self {
         Message { src, dest, body }
     }
+
+    pub fn for_send(dest: Id<String>, mut body: Body<T>) -> Self {
+        body.msg_id = Id::Known(None);
+
+        Message {
+            src: Id::Defer,
+            dest,
+            body,
+        }
+    }
 }
 
 impl<T> Message<T> {
