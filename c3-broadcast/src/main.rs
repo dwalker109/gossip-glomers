@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter::FilterMap;
 use std::sync::{Arc, Mutex, RwLock};
 
-use maelstrom_rs::{Body, Id, Message, Node, Workload};
+use maelstrom_rs::{Body, Id, Message, Node, Outbox, Workload};
 use serde::{Deserialize, Serialize};
 use tokio::io::{stdin, stdout};
 use tokio::join;
@@ -42,7 +42,7 @@ struct BroadcastWorkload {
 }
 
 impl Workload<BroadcastBody> for BroadcastWorkload {
-    fn handle(&mut self, recv: Message<BroadcastBody>, tx: Sender<Message<BroadcastBody>>) {
+    fn handle(&mut self, recv: Message<BroadcastBody>, outbox: Outbox<BroadcastBody>) {
         let messages = Arc::clone(&self.messages);
         let topology = Arc::clone(&self.topology);
 
@@ -54,54 +54,33 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
                 BroadcastBody::Broadcast { message } => {
                     messages.lock().unwrap().insert(*message);
 
-                    tx.send(recv.clone().into_reply(BroadcastBody::BroadcastOk.into()))
-                        .await
-                        .ok();
+                    outbox.reply(&recv, BroadcastBody::BroadcastOk.into()).await;
 
-                    let to_amplify = {
-                        let neighbours = topology.read().unwrap();
-
-                        match neighbours.get(self_node_id) {
-                            None => Vec::with_capacity(0),
-                            Some(n) => n
-                                .iter()
-                                .filter_map(|n| {
-                                    (n != from_node_id).then(|| {
-                                        Message::for_send(
-                                            n.clone(),
-                                            recv.body().r#type().to_owned().into(),
-                                        )
-                                    })
-                                })
-                                .collect::<Vec<_>>(),
+                    let to_amp = { topology.read().unwrap().get(self_node_id).cloned() };
+                    if let Some(to_amp) = to_amp {
+                        for n in to_amp.iter().filter(|n| *n != from_node_id) {
+                            outbox.send(n.to_owned(), recv.body().clone()).await;
                         }
-                    };
-
-                    for m in to_amplify {
-                        tx.send(m).await.ok(); // Should join
                     }
                 }
                 BroadcastBody::BroadcastOk => unimplemented!(),
                 BroadcastBody::Read => {
-                    tx.send(
-                        recv.into_reply(
+                    outbox
+                        .reply(
+                            &recv,
                             BroadcastBody::ReadOk {
                                 messages: Arc::clone(&messages),
                             }
                             .into(),
-                        ),
-                    )
-                    .await
-                    .ok();
+                        )
+                        .await;
                 }
                 BroadcastBody::ReadOk { messages } => todo!(),
                 BroadcastBody::Topology {
                     topology: new_topology,
                 } => {
                     *topology.write().unwrap() = new_topology.clone();
-                    tx.send(recv.into_reply(BroadcastBody::TopologyOk.into()))
-                        .await
-                        .ok();
+                    outbox.reply(&recv, BroadcastBody::TopologyOk.into()).await;
                 }
                 BroadcastBody::TopologyOk => todo!(),
             }

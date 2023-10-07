@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 mod deferrable_id;
 pub use deferrable_id::Id;
 
+mod outbox;
+pub use outbox::Outbox;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message<T> {
     pub(super) src: Id<String>,

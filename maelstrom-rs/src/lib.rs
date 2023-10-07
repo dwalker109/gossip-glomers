@@ -8,6 +8,6 @@ mod message;
 mod node;
 mod workload;
 
-pub use message::{Body, Id, Message};
+pub use message::{Body, Id, Message, Outbox};
 pub use node::Node;
 pub use workload::Workload;

@@ -1,7 +1,6 @@
-use maelstrom_rs::{Body, Id, Message, Node, Workload};
+use maelstrom_rs::{Message, Node, Outbox, Workload};
 use serde::{Deserialize, Serialize};
 use tokio::io::{stdin, stdout};
-use tokio::sync::mpsc::Sender;
 
 #[tokio::main]
 async fn main() {
@@ -21,17 +20,19 @@ enum UniqueIdBody {
 struct UniqueIdWorkload;
 
 impl Workload<UniqueIdBody> for UniqueIdWorkload {
-    fn handle(&mut self, message: Message<UniqueIdBody>, tx: Sender<Message<UniqueIdBody>>) {
+    fn handle(&mut self, message: Message<UniqueIdBody>, outbox: Outbox<UniqueIdBody>) {
         let future = match message.body().r#type().to_owned() {
             UniqueIdBody::Generate => {
                 async move {
-                    let reply = message.into_reply(
-                        UniqueIdBody::GenerateOk {
-                            id: uuid::Uuid::new_v4().to_string(),
-                        }
-                        .into(),
-                    );
-                    tx.send(reply).await.ok();
+                    outbox
+                        .reply(
+                            &message,
+                            UniqueIdBody::GenerateOk {
+                                id: uuid::Uuid::new_v4().to_string(),
+                            }
+                            .into(),
+                        )
+                        .await;
                 }
             }
             _ => unimplemented!(),

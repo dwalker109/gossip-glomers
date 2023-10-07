@@ -1,29 +1,27 @@
-use crate::message::{Body, Id, InitBody, Message};
+use crate::message::{Body, Id, InitBody, Message, Outbox};
 use crate::workload::Workload;
 use serde::{de::DeserializeOwned, Serialize};
-use std::sync::atomic::{AtomicUsize, Ordering::AcqRel};
-use tokio::{
-    io::{
-        AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, Error,
-        ErrorKind, Result,
-    },
-    sync::mpsc,
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, Error, ErrorKind,
+    Result,
 };
 
 /// A single node in the network, connected to the provided reader and writer.
 pub struct Node<
     R: AsyncRead + Unpin + 'static,
-    M: DeserializeOwned + Serialize + Send + Sync + 'static,
+    M: Clone + DeserializeOwned + Serialize + Send + Sync + 'static,
 > {
     node_id: String,
     _node_ids: Vec<String>,
     reader: BufReader<R>,
     reader_buf: String,
-    tx: mpsc::Sender<Message<M>>,
+    outbox: Outbox<M>,
 }
 
-impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sync + 'static>
-    Node<R, M>
+impl<
+        R: AsyncRead + Unpin + 'static,
+        M: Clone + DeserializeOwned + Serialize + Send + Sync + 'static,
+    > Node<R, M>
 {
     /// Starts a new Node connected to the provided input and output.
     ///
@@ -45,17 +43,15 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         writer.write_u8(b'\n').await.ok();
         writer.flush().await.ok();
 
-        let (tx, rx) = mpsc::channel::<Message<M>>(32);
+        let outbox = Outbox::new(&node_id, writer, 32);
 
         let node = Self {
             node_id,
             _node_ids,
             reader,
             reader_buf,
-            tx,
+            outbox,
         };
-
-        tokio::spawn(Self::handle_write(node.node_id.clone(), writer, rx));
 
         Ok(node)
     }
@@ -82,7 +78,7 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
     /// Run the node, receiving and handling (via the workload impl) messages indefinitely.
     pub async fn run(&mut self, mut workload: impl Workload<M>) {
         while let Ok(Some(recv)) = self.recv().await {
-            workload.handle(recv, self.tx.clone());
+            workload.handle(recv, self.outbox.clone());
         }
     }
 
@@ -93,31 +89,5 @@ impl<R: AsyncRead + Unpin + 'static, M: DeserializeOwned + Serialize + Send + Sy
         let msg: Message<M> = serde_json::from_str(&self.reader_buf)?;
 
         Ok(Some(msg))
-    }
-
-    /// Emit messages from the node.
-    async fn handle_write<W: AsyncWrite + Unpin + Send + Sync + 'static>(
-        node_id: String,
-        mut w: BufWriter<W>,
-        mut rx: mpsc::Receiver<Message<M>>,
-    ) {
-        let next_id = AtomicUsize::new(1);
-
-        while let Some(mut msg) = rx.recv().await {
-            // Set src if deferred
-            msg.src = msg.src.else_coalesce(|| Id::Known(Some(node_id.clone())));
-
-            // Set msg_id if deferred
-            msg.body.msg_id = msg
-                .body
-                .msg_id
-                .else_coalesce(|| Id::Known(Some(next_id.fetch_add(1, AcqRel))));
-
-            if let Ok(b) = serde_json::to_vec(&msg) {
-                w.write_all(&b).await.ok();
-                w.write_u8(b'\n').await.ok();
-                w.flush().await.ok();
-            }
-        }
     }
 }
