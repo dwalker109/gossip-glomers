@@ -1,17 +1,28 @@
-use crate::message::{Body, Id, InitBody, Message, Outbox};
+use crate::message::{Body, Id, Message, Outbox};
 use crate::workload::Workload;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::io::{
     AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, Error, ErrorKind,
     Result,
 };
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+enum InitBody {
+    Init {
+        node_id: String,
+        node_ids: Vec<String>,
+    },
+    InitOk,
+}
 
 /// A single node in the network, connected to the provided reader and writer.
 pub struct Node<
     R: AsyncRead + Unpin + 'static,
     M: Clone + DeserializeOwned + Serialize + Send + Sync + 'static,
 > {
-    node_id: String,
+    _node_id: String,
     _node_ids: Vec<String>,
     reader: BufReader<R>,
     reader_buf: String,
@@ -46,7 +57,7 @@ impl<
         let outbox = Outbox::new(&node_id, writer, 32);
 
         let node = Self {
-            node_id,
+            _node_id: node_id,
             _node_ids,
             reader,
             reader_buf,

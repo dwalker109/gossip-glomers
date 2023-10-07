@@ -1,12 +1,8 @@
-use std::collections::{HashMap, HashSet};
-use std::iter::FilterMap;
-use std::sync::{Arc, Mutex, RwLock};
-
-use maelstrom_rs::{Body, Id, Message, Node, Outbox, Workload};
+use maelstrom_rs::{Id, Message, Node, Outbox, Workload};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{stdin, stdout};
-use tokio::join;
-use tokio::sync::mpsc::Sender;
 
 #[tokio::main]
 async fn main() {
@@ -75,7 +71,7 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
                         )
                         .await;
                 }
-                BroadcastBody::ReadOk { messages } => todo!(),
+                BroadcastBody::ReadOk { messages: _ } => todo!(),
                 BroadcastBody::Topology {
                     topology: new_topology,
                 } => {

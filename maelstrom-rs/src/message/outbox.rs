@@ -1,10 +1,10 @@
 use crate::{Body, Id, Message};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::AcqRel;
-use tokio::io::{AsyncWrite, AsyncWriteExt, BufWriter};
-use tokio::sync::mpsc;
+use serde::{de::DeserializeOwned, Serialize};
+use std::{sync::atomic::AtomicUsize, sync::atomic::Ordering::AcqRel};
+use tokio::{
+    io::{AsyncWrite, AsyncWriteExt, BufWriter},
+    sync::mpsc,
+};
 
 #[derive(Clone)]
 pub struct Outbox<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static>(

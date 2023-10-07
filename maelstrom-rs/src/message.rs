@@ -28,25 +28,8 @@ pub struct Message<T> {
 }
 
 impl<T> Message<T> {
-    pub fn into_reply(self, reply_body: Body<T>) -> Self {
-        let mut reply = Self::new(Id::Defer, self.src, reply_body);
-        reply.body.in_reply_to = self.body.msg_id;
-
-        reply
-    }
-
     pub fn new(src: Id<String>, dest: Id<String>, body: Body<T>) -> Self {
         Message { src, dest, body }
-    }
-
-    pub fn for_send(dest: Id<String>, mut body: Body<T>) -> Self {
-        body.msg_id = Id::Known(None);
-
-        Message {
-            src: Id::Defer,
-            dest,
-            body,
-        }
     }
 }
 
@@ -84,29 +67,10 @@ impl<T> Body<T> {
     pub fn r#type(&self) -> &T {
         &self.r#type
     }
-
-    pub fn can_reply(&self) -> bool {
-        matches!(self.msg_id, Id::Known(Some(_)))
-    }
-
-    pub fn is_reply(&self) -> bool {
-        matches!(self.in_reply_to, Id::Known(Some(_)))
-    }
 }
 
 impl<T> From<T> for Body<T> {
     fn from(value: T) -> Self {
         Self::new(value, Id::Defer, Id::Defer)
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub(super) enum InitBody {
-    Init {
-        node_id: String,
-        node_ids: Vec<String>,
-    },
-    InitOk,
 }
