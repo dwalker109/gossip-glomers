@@ -54,7 +54,7 @@ impl<
         writer.write_u8(b'\n').await.ok();
         writer.flush().await.ok();
 
-        let outbox = Outbox::new(&node_id, writer, 32);
+        let outbox = Outbox::new(&node_id, 1, writer, 32);
 
         let node = Self {
             _node_id: node_id,

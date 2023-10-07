@@ -14,11 +14,17 @@ pub struct Outbox<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'stati
 impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> {
     pub fn new<W: AsyncWrite + Unpin + Send + Sync + 'static>(
         node_id: &str,
+        init_msg_id: usize,
         writer: BufWriter<W>,
         buffer: usize,
     ) -> Self {
         let (tx, rx) = mpsc::channel::<Message<T>>(buffer);
-        tokio::spawn(Self::handle_write(node_id.to_owned(), writer, rx));
+        tokio::spawn(Self::handle_write(
+            node_id.to_owned(),
+            init_msg_id,
+            writer,
+            rx,
+        ));
         Self(tx)
     }
 
@@ -42,10 +48,11 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
 
     async fn handle_write<W: AsyncWrite + Unpin + Send + Sync + 'static>(
         node_id: String,
-        mut w: BufWriter<W>,
+        init_msg_id: usize,
+        mut writer: BufWriter<W>,
         mut rx: mpsc::Receiver<Message<T>>,
     ) {
-        let next_id = AtomicUsize::new(1);
+        let next_id = AtomicUsize::new(init_msg_id);
 
         while let Some(mut msg) = rx.recv().await {
             // Set src if deferred
@@ -58,9 +65,9 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
                 .else_coalesce(|| Id::Known(Some(next_id.fetch_add(1, AcqRel))));
 
             if let Ok(b) = serde_json::to_vec(&msg) {
-                w.write_all(&b).await.ok();
-                w.write_u8(b'\n').await.ok();
-                w.flush().await.ok();
+                writer.write_all(&b).await.ok();
+                writer.write_u8(b'\n').await.ok();
+                writer.flush().await.ok();
             }
         }
     }
