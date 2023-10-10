@@ -8,8 +8,8 @@ use tokio::io::{stdin, stdout};
 async fn main() {
     let mut node = Node::startup(stdin(), stdout()).await.unwrap();
     let workload = BroadcastWorkload {
-        messages: Arc::new(Mutex::new(HashSet::new())),
-        topology: Arc::new(RwLock::new(HashMap::new())),
+        messages: Arc::new(RwLock::new(HashSet::new())),
+        neighbours: Arc::new(RwLock::new(Vec::new())),
     };
     node.run(workload).await;
 }
@@ -18,29 +18,27 @@ async fn main() {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 enum BroadcastBody {
-    Broadcast {
-        message: usize,
-    },
+    Broadcast { message: usize },
     BroadcastOk,
     Read,
-    ReadOk {
-        messages: Arc<Mutex<HashSet<usize>>>,
-    },
-    Topology {
-        topology: HashMap<Id<String>, Vec<Id<String>>>,
-    },
+    ReadOk { messages: Arc<RwLock<Messages>> },
+    Topology { topology: Topology },
     TopologyOk,
 }
 
+type Messages = HashSet<usize>;
+type Topology = HashMap<Id<String>, Vec<Id<String>>>;
+type Neighbours = Vec<Id<String>>;
+
 struct BroadcastWorkload {
-    messages: Arc<Mutex<HashSet<usize>>>,
-    topology: Arc<RwLock<HashMap<Id<String>, Vec<Id<String>>>>>,
+    messages: Arc<RwLock<Messages>>,
+    neighbours: Arc<RwLock<Neighbours>>,
 }
 
 impl Workload<BroadcastBody> for BroadcastWorkload {
     fn handle(&mut self, recv: Message<BroadcastBody>, outbox: Outbox<BroadcastBody>) {
         let messages = Arc::clone(&self.messages);
-        let topology = Arc::clone(&self.topology);
+        let neighbours = Arc::clone(&self.neighbours);
 
         tokio::spawn(async move {
             let self_node_id = recv.dest();
@@ -48,18 +46,29 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
 
             match recv.body().r#type() {
                 BroadcastBody::Broadcast { message } => {
-                    messages.lock().unwrap().insert(*message);
+                    // TODO: Handle failure
 
-                    outbox.reply(&recv, BroadcastBody::BroadcastOk.into()).await;
-
-                    let to_amp = { topology.read().unwrap().get(self_node_id).cloned() };
-                    if let Some(to_amp) = to_amp {
-                        for n in to_amp.iter().filter(|n| *n != from_node_id) {
-                            outbox.send(n.to_owned(), recv.body().clone()).await;
-                        }
+                    if messages.read().unwrap().contains(message) {
+                        // Already seen this message - don't do anything
+                        return;
                     }
+
+                    // Broadcast to peers, excluding source
+                    let ids = neighbours
+                        .read()
+                        .unwrap()
+                        .iter()
+                        .filter(|&n| n != from_node_id)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    for id in ids {
+                        outbox.send(id, recv.body().clone()).await;
+                    }
+
+                    // Store and ack
+                    messages.write().unwrap().insert(*message);
+                    outbox.reply(&recv, BroadcastBody::BroadcastOk.into()).await;
                 }
-                BroadcastBody::BroadcastOk => unimplemented!(),
                 BroadcastBody::Read => {
                     outbox
                         .reply(
@@ -71,14 +80,13 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
                         )
                         .await;
                 }
-                BroadcastBody::ReadOk { messages: _ } => todo!(),
-                BroadcastBody::Topology {
-                    topology: new_topology,
-                } => {
-                    *topology.write().unwrap() = new_topology.clone();
+                BroadcastBody::Topology { topology } => {
+                    *neighbours.write().unwrap() = topology.get(self_node_id).unwrap().clone();
                     outbox.reply(&recv, BroadcastBody::TopologyOk.into()).await;
                 }
-                BroadcastBody::TopologyOk => todo!(),
+                BroadcastBody::ReadOk { .. } => unimplemented!(),
+                BroadcastBody::BroadcastOk => unimplemented!(),
+                BroadcastBody::TopologyOk => unimplemented!(),
             }
         });
     }
