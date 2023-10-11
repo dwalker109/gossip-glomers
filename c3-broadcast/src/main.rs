@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{stdin, stdout};
+use tokio::sync;
 
 #[tokio::main]
 async fn main() {
@@ -10,6 +11,7 @@ async fn main() {
     let workload = BroadcastWorkload {
         messages: Arc::new(RwLock::new(HashSet::new())),
         neighbours: Arc::new(RwLock::new(Vec::new())),
+        awaiting_reply: HashMap::new(),
     };
     node.run(workload).await;
 }
@@ -33,6 +35,7 @@ type Neighbours = Vec<Id<String>>;
 struct BroadcastWorkload {
     messages: Arc<RwLock<Messages>>,
     neighbours: Arc<RwLock<Neighbours>>,
+    awaiting_reply: HashMap<Id<usize>, sync::oneshot::Sender<()>>,
 }
 
 impl Workload<BroadcastBody> for BroadcastWorkload {
@@ -62,7 +65,13 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
                         .cloned()
                         .collect::<Vec<_>>();
                     for id in ids {
-                        outbox.send(id, recv.body().clone()).await;
+                        let outbox = outbox.clone();
+                        let body = recv.body().clone();
+                        let (tx, rx) = sync::oneshot::channel::<()>();
+                        tokio::spawn(async move {
+                            let msg_id = outbox.rpc(id, body.clone()).await;
+                            body.
+                        });
                     }
 
                     // Store and ack
