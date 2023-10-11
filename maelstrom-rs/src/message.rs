@@ -31,6 +31,10 @@ impl<T> Message<T> {
     pub fn new(src: Id<String>, dest: Id<String>, body: Body<T>) -> Self {
         Message { src, dest, body }
     }
+
+    pub fn can_reply(&self) -> bool {
+        matches!(self.body.msg_id, Id::Known(Some(_)))
+    }
 }
 
 impl<T> Message<T> {
