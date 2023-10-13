@@ -38,7 +38,7 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
     pub async fn reply(&self, subject: &Message<T>, body: Body<T>) {
         let mut message = Message::new(Id::Defer, subject.src.clone(), body);
         message.body.in_reply_to = subject.body.msg_id;
-        message.body.msg_id = message.body.msg_id.else_coalesce(|| self.next_msg_id());
+        message.body.msg_id = self.next_msg_id();
 
         self.write_tx.send(message).await.unwrap();
     }
@@ -54,7 +54,7 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
     pub async fn rpc(&self, dest: Id<String>, body: Body<T>) {
         let mut message = Message::new(Id::Defer, dest, body);
         message.body.in_reply_to = Id::Known(None);
-        message.body.msg_id = message.body.msg_id.else_coalesce(|| self.next_msg_id());
+        message.body.msg_id = self.next_msg_id();
 
         let (ack_tx, mut ack_rx) = sync::oneshot::channel::<()>();
         self.in_flight
@@ -64,7 +64,7 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
 
         let write_tx = self.write_tx.clone();
         tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(1));
+            let mut interval = interval(Duration::from_millis(1000));
 
             loop {
                 tokio::select! {
