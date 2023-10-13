@@ -1,4 +1,4 @@
-use maelstrom_rs::{Id, Message, Node, Outbox, Workload};
+use maelstrom_rs::{Message, Node, Outbox, Workload};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -27,8 +27,8 @@ enum BroadcastBody {
 }
 
 type Messages = HashSet<usize>;
-type Topology = HashMap<Id<String>, Vec<Id<String>>>;
-type Neighbours = Vec<Id<String>>;
+type Topology = HashMap<String, Vec<String>>;
+type Neighbours = Vec<String>;
 
 struct BroadcastWorkload {
     messages: Arc<RwLock<Messages>>,
@@ -46,32 +46,24 @@ impl Workload<BroadcastBody> for BroadcastWorkload {
 
             match recv.body().r#type() {
                 BroadcastBody::Broadcast { message } => {
-                    if messages.read().unwrap().contains(message) {
-                        // Already seen this message - don't amplify
-                        outbox.reply(&recv, BroadcastBody::BroadcastOk.into()).await;
-                        return;
-                    }
+                    let is_new = messages.write().unwrap().insert(*message);
+                    outbox.reply(&recv, BroadcastBody::BroadcastOk.into()).await;
 
-                    // Broadcast to peers, excluding source
-                    let ids = neighbours
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .filter(|&n| n != from_node_id)
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    for id in ids {
-                        let outbox = outbox.clone();
-                        let body = recv.body().clone();
-                        tokio::spawn(async move {
-                            outbox.rpc(id, body.clone()).await;
-                        });
-                    }
-
-                    // Store, and then ack if required
-                    messages.write().unwrap().insert(*message);
-                    if recv.can_reply() {
-                        outbox.reply(&recv, BroadcastBody::BroadcastOk.into()).await;
+                    if is_new {
+                        let ids = neighbours
+                            .read()
+                            .unwrap()
+                            .iter()
+                            .filter(|&n| n != from_node_id)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        for id in ids {
+                            let outbox = outbox.clone();
+                            let body = recv.body().clone();
+                            tokio::spawn(async move {
+                                outbox.rpc(id, body.clone()).await;
+                            });
+                        }
                     }
                 }
 

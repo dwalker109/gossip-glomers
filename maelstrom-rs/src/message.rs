@@ -14,35 +14,32 @@
 
 use serde::{Deserialize, Serialize};
 
-mod deferrable_id;
-pub use deferrable_id::Id;
-
 mod outbox;
 pub use outbox::Outbox;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message<T> {
-    pub(super) src: Id<String>,
-    pub(super) dest: Id<String>,
-    pub(super) body: Body<T>,
+    pub(crate) src: String,
+    pub(crate) dest: String,
+    pub(crate) body: Body<T>,
 }
 
 impl<T> Message<T> {
-    pub fn new(src: Id<String>, dest: Id<String>, body: Body<T>) -> Self {
-        Message { src, dest, body }
-    }
-
-    pub fn can_reply(&self) -> bool {
-        matches!(self.body.msg_id, Id::Known(Some(_)))
+    pub fn new(dest: String, body: Body<T>) -> Self {
+        Message {
+            src: String::default(), // Will be set on send
+            dest,
+            body,
+        }
     }
 }
 
 impl<T> Message<T> {
-    pub fn src(&self) -> &Id<String> {
+    pub fn src(&self) -> &str {
         &self.src
     }
 
-    pub fn dest(&self) -> &Id<String> {
+    pub fn dest(&self) -> &str {
         &self.dest
     }
 
@@ -54,13 +51,13 @@ impl<T> Message<T> {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Body<T> {
     #[serde(flatten)]
-    r#type: T,
-    pub(super) msg_id: Id<usize>,
-    in_reply_to: Id<usize>,
+    pub(crate) r#type: T,
+    pub(crate) msg_id: Option<usize>,
+    pub(crate) in_reply_to: Option<usize>,
 }
 
 impl<T> Body<T> {
-    pub fn new(r#type: T, msg_id: Id<usize>, in_reply_to: Id<usize>) -> Self {
+    pub fn new(r#type: T, msg_id: Option<usize>, in_reply_to: Option<usize>) -> Self {
         Self {
             r#type,
             msg_id,
@@ -75,6 +72,6 @@ impl<T> Body<T> {
 
 impl<T> From<T> for Body<T> {
     fn from(value: T) -> Self {
-        Self::new(value, Id::Defer, Id::Defer)
+        Self::new(value, None, None)
     }
 }

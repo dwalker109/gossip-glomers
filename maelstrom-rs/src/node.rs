@@ -1,4 +1,4 @@
-use crate::message::{Body, Id, Message, Outbox};
+use crate::message::{Body, Message, Outbox};
 use crate::workload::Workload;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::io::{
@@ -47,37 +47,38 @@ impl<
 
         reader.read_line(&mut reader_buf).await?;
         let msg_init: Message<InitBody> = serde_json::from_str(&reader_buf)?;
-
-        let (node_id, _node_ids, msg_init_ok) = Self::init(msg_init).await?;
-        let b = serde_json::to_vec(&msg_init_ok)?;
-        writer.write_all(&b).await.ok();
-        writer.write_u8(b'\n').await.ok();
-        writer.flush().await.ok();
-
-        let outbox = Outbox::new(&node_id, 1, writer, 32);
+        let (node_id, _node_ids) = Self::init(msg_init, &mut writer).await?;
 
         let node = Self {
-            _node_id: node_id,
+            _node_id: node_id.clone(),
             _node_ids,
             reader,
             reader_buf,
-            outbox,
+            outbox: Outbox::new(node_id, 1, writer, 32),
         };
 
         Ok(node)
     }
 
     /// Process the init message.
-    async fn init(msg_init: Message<InitBody>) -> Result<(String, Vec<String>, Message<InitBody>)> {
+    async fn init(
+        msg_init: Message<InitBody>,
+        writer: &mut BufWriter<impl AsyncWrite + Unpin>,
+    ) -> Result<(String, Vec<String>)> {
         match &msg_init.body().r#type() {
             InitBody::Init { node_id, node_ids } => {
-                let msg_init_ok = Message::new(
-                    Id::Known(Some(node_id.to_owned())),
-                    msg_init.src.clone(),
-                    Body::new(InitBody::InitOk, Id::Known(Some(0)), msg_init.body().msg_id),
-                );
+                let msg_init_ok = Message {
+                    src: node_id.to_owned(),
+                    dest: msg_init.src.clone(),
+                    body: Body::new(InitBody::InitOk, Some(0), msg_init.body().msg_id),
+                };
 
-                Ok((node_id.to_owned(), node_ids.to_owned(), msg_init_ok))
+                let b = serde_json::to_vec(&msg_init_ok)?;
+                writer.write_all(&b).await.ok();
+                writer.write_u8(b'\n').await.ok();
+                writer.flush().await.ok();
+
+                Ok((node_id.to_owned(), node_ids.to_owned()))
             }
             _ => Err(Error::new(
                 ErrorKind::InvalidData,
