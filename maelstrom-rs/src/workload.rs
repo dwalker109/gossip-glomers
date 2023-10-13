@@ -1,8 +1,7 @@
-//! Trait defining how a node completes a given workload.
-
 use crate::message::{Message, Outbox};
 use serde::{de::DeserializeOwned, Serialize};
 
+/// Trait defining how a node completes a given workload, responding to the node's incoming messages.
 pub trait Workload<M: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> {
     /// Handle will be called once per incoming message, and can send messages
     /// out again via the provided channel. Any number of message can be send -

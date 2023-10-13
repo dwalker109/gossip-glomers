@@ -60,7 +60,6 @@ impl<
         Ok(node)
     }
 
-    /// Process the init message.
     async fn init(
         msg_init: Message<InitBody>,
         writer: &mut BufWriter<impl AsyncWrite + Unpin>,

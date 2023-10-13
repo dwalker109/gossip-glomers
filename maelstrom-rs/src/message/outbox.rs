@@ -11,6 +11,7 @@ use tokio::{
     sync::mpsc,
 };
 
+/// The mechanism by which messages are actually sent, once created.
 #[derive(Clone)]
 pub struct Outbox<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> {
     write_tx: mpsc::Sender<Message<T>>,
@@ -19,6 +20,7 @@ pub struct Outbox<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'stati
 }
 
 impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> {
+    /// Create a new outbox, which will output to the provided writer.
     pub fn new<W: AsyncWrite + Unpin + Send + Sync + 'static>(
         node_id: String,
         init_msg_id: usize,
@@ -35,6 +37,7 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
         }
     }
 
+    /// Send a single, non-retried reply to a subject message.
     pub async fn reply(&self, subject: &Message<T>, body: Body<T>) {
         if subject.body.msg_id.is_none() {
             // No reply possible, no-op
@@ -48,6 +51,7 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
         self.write_tx.send(message).await.unwrap();
     }
 
+    /// Send a single, non-retried message which cannot be replied to.
     pub async fn send(&self, dest: String, body: Body<T>) {
         let mut message = Message::new(dest, body);
         message.body.in_reply_to = None;
@@ -56,6 +60,8 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
         self.write_tx.send(message).await.unwrap();
     }
 
+    /// Send a single message which expects a reply. It will be retried until `ack` is called
+    /// with a suitable reply.
     pub async fn rpc(&self, dest: String, body: Body<T>) {
         let mut message = Message::new(dest, body);
         message.body.in_reply_to = None;
@@ -82,6 +88,7 @@ impl<T: Clone + DeserializeOwned + Serialize + Send + Sync + 'static> Outbox<T> 
         });
     }
 
+    /// Acknowledge receipt of an rpc message, stopping the retries.
     pub fn ack(&self, message: &Message<T>) {
         if let Some(ack_tx) = self
             .in_flight
